@@ -5,9 +5,37 @@ const cheerio = require('cheerio');
 
 const uri = "mongodb://172.24.16.1:27017";
 const client = new MongoClient(uri);
-let url = "https://www.j-archive.com/showgame.php?game_id=6786"
+let url = "=";
 let id = 1;
-
+// goes up to id=7105
+// Send mongo query
+async function query(categories) {
+    // insertMany categories
+  try {
+    await client.connect();
+    const database = client.db('jarchive');
+    const collection = database.collection('categories');
+    const result = await collection.insertMany(categories);
+    console.log(result);
+  } catch (error) {
+	console.log(error);
+	await client.close();  
+	process.exit();
+  } finally {
+	// Wait just to not overload servers too much
+	categories.length = 0;
+	promises.length = 0;
+	await new Promise(resolve => setTimeout(resolve, 1000));
+    // Ensures that the client will close when you finish/error
+	if (id < 7104) {
+		id += 5;
+		scrape();
+	}
+	else if (id >= 7105) {
+		await client.close();
+	}
+  }
+}
 
 // Get clues for category given which round and category index
 // This asssumes that if we have the correct number of valid clues, we have an answer for each clue
@@ -19,9 +47,6 @@ function getClues($, i, which) {
 	if (clues.length != 10) {
 		return false;
 	}
-
-	// [] to indicate accumulator should be an array
-   // Could use reduce instead of this, but couldn't figure out a good way of efficiently validating clues/answers
 
 	let index = 0;
 	let cluesIndex = 0;
@@ -49,61 +74,69 @@ function getClues($, i, which) {
 	return cluesList;
 }
 
+let promises = [];
+let categories = [];
+
 async function scrape() {
-    axios(url).then(response => {
-        
-
-        const html = response.data;
-        const $ = cheerio.load(html);
-
-        // airDate
-        const dateRegex = /-.*/;
-        const date = new Date($('#game_title > h1').text().match(dateRegex)[0]);
-  
-        // Iterate through each category name (there should always be a category name even if it's just 1-6)
-        $('.category_name').each(function(i, e) {
-			
-			let category = {}
-			category.name = $(e).text();
-			category.date = date;
-            
-            let clues;
-            // We need to explicitly check which round the clue is in, not go by category index because some categories might be missing
-            if ($('#jeopardy_round').find(e).length === 1) {
-				clues = getClues($, i, 'J');
-				if (clues) {
-					category.clues = clues;
-					categories.push(category);
-				}
+	for (let i = id; i < (id + 5); i++) {
+		
+		promises.push(
+			axios({method: 'get', url: 'https://www.j-archive.com/showgame.php?game_id=' + i}).then(response => {
 				
-            }
-            else if ($('#double_jeopardy_round').find(e).length === 1) {
-            	clues = getClues($, i - 6, 'DJ');
-				if (clues) {
-					category.clues = clues;
-					categories.push(category);
-				}
-            }
-        });
-    	query(categories).catch(console.dir);
+				const html = response.data;
+				const $ = cheerio.load(html);
 
-    }).catch(console.error);
+				// airDate
+				const dateRegex = /-.*/;
+				const date = new Date($('#game_title > h1').text().match(dateRegex)[0]);
+
+				// Iterate through each category name (there should always be a category name even if it's just 1-6)
+				$('.category_name').each(function (i, e) {
+
+					let category = {}
+					category.name = $(e).text();
+					category.date = date;
+
+					let clues;
+					// We need to explicitly check which round the clue is in, not go by category index because some categories might be missing
+					if ($('#jeopardy_round').find(e).length === 1) {
+						clues = getClues($, i, 'J');
+						if (clues) {
+							category.clues = clues;
+							categories.push(category);
+						}
+
+					}
+					else if ($('#double_jeopardy_round').find(e).length === 1) {
+						clues = getClues($, i - 6, 'DJ');
+						if (clues) {
+							category.clues = clues;
+							categories.push(category);
+						}
+					}
+
+					else if ($('#final_jeopardy_round')) {
+						let final = {};
+						final.name = category.name;
+						final.clue = $('#clue_FJ').text();
+						const answerRegex = /<em class=.*?<\/em>/;
+						final.answer = $($('#clue_FJ').parents().eq(6).find('div').attr('onmouseover').match(answerRegex)[0]).text();
+						final.type = "final";
+						final.date = date;
+						if (final.clue) {
+							categories.push(final);
+						}
+					}
+				});
+
+			}).catch(console.error)
+		);
+	}
+
+	Promise.all(promises).then(() => {
+		query(categories);
+	});
+		
 }
 
 scrape();
-
-
-
-async function query(categories) {
-    // insertMany categories
-  try {
-    await client.connect();
-    const database = client.db('jarchive');
-    const collection = database.collection('categories');
-    const result = await collection.insertMany(categories);
-    console.log(result);
-  } finally {
-    // Ensures that the client will close when you finish/error
-    await client.close();
-  }
-}
