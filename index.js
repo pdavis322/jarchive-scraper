@@ -99,6 +99,7 @@ async function scrape() {
 
 					let clues;
 					// We need to explicitly check which round the clue is in, not go by category index because some categories might be missing
+					// 2 days later me realizes that even if clues in the category are missing there will still be a category name so ^ is incorrect
 					if ($('#jeopardy_round').find(e).length === 1) {
 						clues = getClues($, i, 'J');
 						if (clues) {
