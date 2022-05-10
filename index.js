@@ -1,37 +1,35 @@
-// TODO: incorporate images/videos in clues (ex: id=1 "board" for 1000)
 const { MongoClient } = require("mongodb");
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-const uri = "mongodb://172.24.16.1:27017";
-const client = new MongoClient(uri);
-let url = "=";
-let id = 1;
-// goes up to id=7105
+const url = require("./config.json").url;
+const client = new MongoClient(url);
+// show that aired on 2010-01-01
+let id = 3449;
 // Send mongo query
 async function query(categories) {
     // insertMany categories
   try {
     await client.connect();
-    const database = client.db('jarchive');
-    const collection = database.collection('categories');
+    const database = client.db('Jeopardy');
+    const collection = database.collection('Categories');
     const result = await collection.insertMany(categories);
     console.log(result);
   } catch (error) {
 	console.log(error);
-	await client.close();  
-	process.exit();
   } finally {
 	// Wait just to not overload servers too much
 	categories.length = 0;
 	promises.length = 0;
 	await new Promise(resolve => setTimeout(resolve, 1000));
     // Ensures that the client will close when you finish/error
-	if (id < 7104) {
+	client.close();
+	if (id < 7344) {
+		console.log(`current id: ${id}`);
 		id += 5;
 		scrape();
 	}
-	else if (id >= 7105) {
+	else {
 		await client.close();
 	}
   }
@@ -67,7 +65,7 @@ function getClues($, i, which) {
 			cluesIndex = cluesList.length - 1;
 		}
 		else if (text) {
-			cluesList[cluesIndex].clue = text;
+			cluesList[cluesIndex].question = text;
 		}
 		index++;
 	}
@@ -94,40 +92,40 @@ async function scrape() {
 				$('.category_name').each(function (i, e) {
 
 					let category = {}
-					category.name = $(e).text();
-					category.date = date;
+					category.Name = $(e).text();
+					category.AirDate = date;
 
 					let clues;
 					// We need to explicitly check which round the clue is in, not go by category index because some categories might be missing
 					// 2 days later me realizes that even if clues in the category are missing there will still be a category name so ^ is incorrect
 					if ($('#jeopardy_round').find(e).length === 1) {
 						clues = getClues($, i, 'J');
-						if (clues) {
-							category.clues = clues;
+						if (clues && category.AirDate > new Date('2010-01-01')) {
+							category.Clues = clues;
 							categories.push(category);
 						}
 
 					}
 					else if ($('#double_jeopardy_round').find(e).length === 1) {
 						clues = getClues($, i - 6, 'DJ');
-						if (clues) {
-							category.clues = clues;
+						if (clues && category.AirDate > new Date('2010-01-01')) {
+							category.Clues = clues;
 							categories.push(category);
 						}
 					}
 
-					else if ($('#final_jeopardy_round')) {
-						let final = {};
-						final.name = category.name;
-						final.clue = $('#clue_FJ').text();
-						const answerRegex = /<em class=.*?<\/em>/;
-						final.answer = $($('#clue_FJ').parents().eq(6).find('div').attr('onmouseover').match(answerRegex)[0]).text();
-						final.type = "final";
-						final.date = date;
-						if (final.clue) {
-							categories.push(final);
-						}
-					}
+					// else if ($('#final_jeopardy_round')) {
+					// 	let final = {};
+					// 	final.name = category.name;
+					// 	final.clue = $('#clue_FJ').text();
+					// 	const answerRegex = /<em class=.*?<\/em>/;
+					// 	final.answer = $($('#clue_FJ').parents().eq(6).find('div').attr('onmouseover').match(answerRegex)[0]).text();
+					// 	final.type = "final";
+					// 	final.date = date;
+					// 	if (final.clue) {
+					// 		categories.push(final);
+					// 	}
+					// }
 				});
 
 			}).catch(console.error)
